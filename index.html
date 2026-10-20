@@ -86,6 +86,7 @@
     .cover-sub { font-family: var(--serif); font-size: clamp(1.3rem, 1.9vw, 1.7rem); font-weight: 300; font-style: italic; line-height: 1.4; color: var(--text-dim); max-width: 500px; }
     .cover-desc { color: var(--text-dim); font-size: 13px; line-height: 1.8; max-width: 460px; }
     .cover-art { position: relative; aspect-ratio: 1; background: #000; border: 1px solid var(--line); overflow: hidden; max-width: 520px; margin-left: auto; width: 100%; }
+    
     .canvas-slot { position: absolute; inset: 0; overflow: hidden; }
     .canvas-slot canvas {
       display: block !important;
@@ -94,6 +95,7 @@
       width: 100% !important; height: 100% !important;
       max-width: 100% !important; max-height: 100% !important;
     }
+    
     .cover-foot { display: grid; grid-template-columns: repeat(3, 1fr); gap: 40px; padding-top: 32px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-faint); }
     .cover-foot .k { display: block; color: var(--gold-soft); margin-bottom: 8px; }
     .cover-foot .v { color: var(--text-dim); letter-spacing: 0.1em; line-height: 1.7; }
@@ -705,20 +707,6 @@
 <script>
 // ============================================================
 // RECURSIVE GRID — GENERATIVE RECURSIVE-SUBDIVISION COMPOSITIONS
-//
-// Same seed → many surfaces:
-//   • Cover, Plate, Frame — same seed
-//   • All 4 surfaces (Print, Scarf, Textile, Wall) — same seed
-//   • Archive — 8 unique seeds
-//
-// Rectangular surfaces tile the square composition to fill.
-//
-// Generative engine (preserved from source):
-//   • Recursive subdivision 3 levels deep
-//   • Each rectangle → 2–4 × 2–4 cells
-//   • Jitter position ±10%, size 0.8–1.1
-//   • 70% recurse, 30% draw
-//   • Flat HSB colour per rectangle, 80% alpha
 // ============================================================
 
 const prefix = 'Recursive-Grid';
@@ -736,13 +724,9 @@ class SeededRandom {
 
 // ============================================================
 // SKETCH FACTORY
-// tile: { cols, rows } — repeat the square composition N times
 // ============================================================
-function makeSketch({ slotId, seedValue, isMaster, maxFrames, tile }) {
+function makeSketch({ slotId, seedValue, isMaster, maxFrames }) {
   const stopAfter = maxFrames || Infinity;
-  const tileCols = (tile && tile.cols) || 1;
-  const tileRows = (tile && tile.rows) || 1;
-
   let canvasW = 0;
   let canvasH = 0;
   let frameCount = 0;
@@ -786,67 +770,51 @@ function makeSketch({ slotId, seedValue, isMaster, maxFrames, tile }) {
         return;
       }
 
-      // Tile composition
-      const tileW = canvasW / tileCols;
-      const tileH = canvasH / tileRows;
-      const tileSize = Math.min(tileW, tileH);
-
-      for (let ty = 0; ty < tileRows; ty++) {
-        for (let tx = 0; tx < tileCols; tx++) {
-          const ox = tx * tileW + (tileW - tileSize) / 2;
-          const oy = ty * tileH + (tileH - tileSize) / 2;
-
-          p.push();
-          p.translate(ox, oy);
-          drawComposition(p, tileSize, seedValue);
-          p.pop();
-        }
-      }
-
+      // Directly draw the composition to fill the entire canvas exactly
+      drawComposition(p, canvasW, canvasH, seedValue);
       frameCount++;
     };
   };
 
-  // ---- Draw the recursive-grid composition into a square of side `size` ----
-  function drawComposition(p, size, seedValue) {
+  // ---- Draw the recursive-grid composition to fill the canvas ----
+  function drawComposition(p, w, h, seedValue) {
     const sr = new SeededRandom(seedValue);
-    const cs = size;
 
     // Dark background
     p.background(0, 0, 0);
 
     // Recursive subdivision
-    recursiveGrid(p, sr, 0, 0, cs, 3, cs);
+    recursiveGrid(p, sr, 0, 0, w, h, 3);
   }
 
   // ---- Recursive grid function ----
-  function recursiveGrid(p, sr, x, y, size, depth, cs) {
+  function recursiveGrid(p, sr, x, y, w, h, depth) {
     // Base case: depth exhausted or cell too small
-    if (depth === 0 || size < cs * 0.05) {
+    if (depth === 0 || w < 5 || h < 5) {
       p.fill(
         sr.rand() * 360,
         sr.range(50, 100),
         sr.range(70, 100),
         0.8
       );
-      p.rect(x, y, size, size);
+      p.rect(x, y, w, h);
       return;
     }
 
     const cols = sr.int(2, 4);
     const rows = sr.int(2, 4);
-    const w = size / cols;
-    const h = size / rows;
+    const cellW = w / cols;
+    const cellH = h / rows;
 
     for (let i = 0; i < cols; i++) {
       for (let j = 0; j < rows; j++) {
-        const nx = x + i * w + sr.range(-w * 0.1, w * 0.1);
-        const ny = y + j * h + sr.range(-h * 0.1, h * 0.1);
-        const nw = w * sr.range(0.8, 1.1);
-        const nh = h * sr.range(0.8, 1.1);
+        const nx = x + i * cellW + sr.range(-cellW * 0.1, cellW * 0.1);
+        const ny = y + j * cellH + sr.range(-cellH * 0.1, cellH * 0.1);
+        const nw = cellW * sr.range(0.8, 1.1);
+        const nh = cellH * sr.range(0.8, 1.1);
 
         if (sr.rand() < 0.7) {
-          recursiveGrid(p, sr, nx, ny, Math.min(nw, nh), depth - 1, cs);
+          recursiveGrid(p, sr, nx, ny, nw, nh, depth - 1);
         } else {
           p.fill(
             sr.rand() * 360,
@@ -908,10 +876,10 @@ function attachVisibilityObserver(p5Instance, element) {
   obs.observe(element);
 }
 
-function createLiveP5({ slotId, seedValue, isMaster, maxFrames, tile, onCreated }) {
+function createLiveP5({ slotId, seedValue, isMaster, maxFrames, onCreated }) {
   whenSlotReady(slotId, (slot) => {
     slot.querySelectorAll('canvas').forEach(c => c.remove());
-    const inst = new p5(makeSketch({ slotId, seedValue, isMaster, maxFrames, tile }), slot);
+    const inst = new p5(makeSketch({ slotId, seedValue, isMaster, maxFrames }), slot);
     inst._frozen = false;
     attachVisibilityObserver(inst, slot);
     if (onCreated) onCreated(inst);
@@ -927,7 +895,6 @@ function drawPlate() {
     seedValue: seed,
     isMaster: true,
     maxFrames: 2,
-    tile: { cols: 1, rows: 1 },
     onCreated: (inst) => { plateP5 = inst; }
   });
 }
@@ -941,7 +908,6 @@ function drawCover() {
     seedValue: seed,
     isMaster: false,
     maxFrames: 2,
-    tile: { cols: 1, rows: 1 },
     onCreated: (inst) => { coverP5 = inst; }
   });
 }
@@ -955,19 +921,18 @@ function drawFramedPlate() {
     seedValue: seed,
     isMaster: false,
     maxFrames: 2,
-    tile: { cols: 1, rows: 1 },
     onCreated: (inst) => { frameP5 = inst; }
   });
 }
 
 // ============================================================
-// SURFACES — same seed as plate, tiled to fill aspect ratio
+// SURFACES — same seed as plate, scaled to fill aspect ratio
 // ============================================================
 const surfaceDefs = [
-  { id: 'surfacePrint',   wrapId: 'wrap-surfacePrint',   tile: { cols: 1, rows: 1 } },
-  { id: 'surfaceScarf',   wrapId: 'wrap-surfaceScarf',   tile: { cols: 3, rows: 1 } },
-  { id: 'surfaceTextile', wrapId: 'wrap-surfaceTextile', tile: { cols: 2, rows: 2 } },
-  { id: 'surfaceWall',    wrapId: 'wrap-surfaceWall',    tile: { cols: 1, rows: 2 } }
+  { id: 'surfacePrint',   wrapId: 'wrap-surfacePrint' },
+  { id: 'surfaceScarf',   wrapId: 'wrap-surfaceScarf' },
+  { id: 'surfaceTextile', wrapId: 'wrap-surfaceTextile' },
+  { id: 'surfaceWall',    wrapId: 'wrap-surfaceWall' }
 ];
 
 function drawSurfaces() {
@@ -996,8 +961,7 @@ function drawSurfaces() {
           slotId: slot.id || (slot.id = def.id + '-slot'),
           seedValue: seed,
           isMaster: false,
-          maxFrames: 2,
-          tile: def.tile
+          maxFrames: 2
         }),
         slot
       );
@@ -1072,8 +1036,7 @@ function drawArchive() {
           slotId: 'archive-slot-' + i,
           seedValue: archiveSeeds[i],
           isMaster: false,
-          maxFrames: 2,
-          tile: { cols: 1, rows: 1 }
+          maxFrames: 2
         }),
         slot
       );
